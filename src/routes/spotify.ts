@@ -77,8 +77,44 @@ router.get('/callback', async (req: Request, res: Response) => {
       userId: spotifyUserId
     });
     
-    // Redirect to the frontend or a success page
-    res.redirect('/');
+    // NEW CODE: Fetch and store user's top tracks and artists
+    console.log('Fetching user data after authentication...');
+    
+    try {
+      // Define time ranges
+      const timeRanges = ['short_term', 'medium_term'] as const;
+      
+      // Fetch and store top items for all time ranges
+      const fetchPromises: Promise<void>[] = [];
+      
+      for (const timeRange of timeRanges) {
+        // Get user's top artists
+        const topArtistsResponse = await spotifyService.getUserTopItems(
+          tokenResponse.access_token, 
+          'artists', 
+          timeRange, 
+          -1
+        );
+        await firebaseService.storeUserTopArtists(spotifyUserId, topArtistsResponse, timeRange);
+        
+        // Get user's top tracks
+        const topTracksResponse = await spotifyService.getUserTopItems(
+          tokenResponse.access_token, 
+          'tracks', 
+          timeRange, 
+          -1
+        );
+        await firebaseService.storeUserTopTracks(spotifyUserId, topTracksResponse, timeRange);
+      }
+      
+      console.log('Successfully stored user data after authentication!');
+    } catch (dataError) {
+      // If data fetching fails, just log it but continue the authentication
+      console.error('Error storing user data during authentication:', dataError);
+    }
+    
+    // Redirect to the frontend application
+    res.redirect('http://localhost:3000');
   } catch (error) {
     console.error('Error in Spotify callback:', error);
     res.status(500).json({ error: 'Failed to complete Spotify authentication' });

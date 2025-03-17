@@ -26,7 +26,7 @@ interface SpotifyUserProfile {
 class SpotifyService {
   private clientId: string;
   private clientSecret: string;
-  private redirectUri: string = 'http://localhost:3000/callback';
+  private redirectUri: string = 'http://localhost:5000/api/spotify/callback';
   private tokenUrl: string = 'https://accounts.spotify.com/api/token';
   private authorizeUrl: string = 'https://accounts.spotify.com/authorize';
   

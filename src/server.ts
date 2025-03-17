@@ -1,4 +1,5 @@
 import express from 'express';
+import path from 'path';
 import dotenv from 'dotenv';
 import session from 'express-session';
 import spotifyRoutes from './routes/spotify';
@@ -7,7 +8,7 @@ import './services/firebaseService';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000; // Changed port from 3000 to 5000
 
 app.use(session({
   secret: process.env.SESSION_SECRET || 'spotify-moody-secret',
@@ -31,13 +32,17 @@ declare module 'express-session' {
 
 app.use(express.json());
 
-// Mount Spotify routes
+// API routes
 app.use('/api/spotify', spotifyRoutes);
-app.use('/', spotifyRoutes); // This allows /callback to work correctly
 
-app.get('/', (_req, res) => {
-  res.send('Moody API is running');
-});
+// In production, serve the React app
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../client/build')));
+  
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(__dirname, '../client/build/index.html'));
+  });
+}
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
