@@ -1,0 +1,35 @@
+{
+  "name": "moody",
+  "version": "1.0.0",
+  "description": "Spotify API integration with Express and TypeScript",
+  "main": "dist/server.js",
+  "scripts": {
+    "start": "node dist/server.js",
+    "dev": "nodemon --exec ts-node src/server.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "axios": "^1.6.2",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "firebase-admin": "^13.2.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/express-session": "^1.17.10",
+    "@types/node": "^20.10.0",
+    "nodemon": "^3.0.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.2"
+  },
+  "overrides": {
+    "glob": "^9.3.5",
+    "rimraf": "^5.0.1"
+  },
+  "resolutions": {
+    "glob": "^9.3.5",
+    "rimraf": "^5.0.1",
+    "inflight": "^2.0.0"
+  }
+}
