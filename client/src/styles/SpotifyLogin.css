@@ -1,0 +1,39 @@
+.spotify-login-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #1DB954;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 50px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
+  width: 100%;
+  max-width: 280px;
+}
+
+.spotify-login-button:hover {
+  background-color: #1ed760;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(29, 185, 84, 0.4);
+}
+
+.spotify-logo {
+  font-size: 24px;
+  margin-right: 10px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+  .spotify-login-button {
+    padding: 10px 20px;
+    max-width: 240px;
+    font-size: 0.9rem;
+  }
+  
+  .spotify-logo {
+    font-size: 20px;
+    margin-right: 8px;
+  }
+}

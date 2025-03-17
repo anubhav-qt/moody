@@ -1,0 +1,75 @@
+.app {
+  text-align: center;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(to bottom, #ffe8ef, #ffecd2);
+  padding: 20px;
+}
+
+.container {
+  max-width: 800px;
+  width: 100%;
+  background-color: rgba(255, 255, 255, 0.85);
+  border-radius: 20px;
+  padding: 30px 20px; /* Adjusted padding for smaller screens */
+  box-shadow: 0 10px 30px rgba(255, 105, 180, 0.15);
+  backdrop-filter: blur(10px);
+  margin: 0 auto; /* Center container horizontally */
+}
+
+.actions {
+  margin-top: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%; /* Ensure full width for proper centering */
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 500;
+  font-size: 16px;
+  padding: 12px 24px;
+  border-radius: 50px;
+  transition: all 0.3s ease;
+}
+
+button:hover {
+  transform: translateY(-2px);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .container {
+    padding: 25px 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  .container {
+    padding: 20px 10px;
+    border-radius: 15px;
+  }
+  
+  .actions {
+    margin-top: 30px;
+    gap: 15px;
+  }
+  
+  button {
+    font-size: 14px;
+    padding: 10px 20px;
+  }
+}

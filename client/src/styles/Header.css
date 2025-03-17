@@ -1,0 +1,52 @@
+.header {
+  margin-bottom: 40px;
+  width: 100%;
+}
+
+.title {
+  font-family: 'Pacifico', cursive;
+  font-size: 3.5rem;
+  color: #ff6b9d;
+  margin-bottom: 10px;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(to right, #ff6b9d, #ffa87d);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.subtitle {
+  font-size: 1.2rem;
+  color: #777;
+  font-weight: 300;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .header {
+    margin-bottom: 30px;
+  }
+  
+  .title {
+    font-size: 2.8rem;
+  }
+  
+  .subtitle {
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .header {
+    margin-bottom: 25px;
+  }
+  
+  .title {
+    font-size: 2.2rem;
+    margin-bottom: 5px;
+  }
+  
+  .subtitle {
+    font-size: 0.9rem;
+  }
+}

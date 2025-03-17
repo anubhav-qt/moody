@@ -1,0 +1,44 @@
+.generate-button {
+  background: linear-gradient(45deg, #ff6b9d, #ffa87d);
+  color: white;
+  padding: 14px 28px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  border-radius: 50px;
+  box-shadow: 0 5px 15px rgba(255, 107, 157, 0.4);
+  transition: all 0.3s ease;
+  min-width: 200px;
+  width: 100%;
+  max-width: 280px;
+}
+
+.generate-button:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(255, 107, 157, 0.5);
+}
+
+.generate-button:active:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.generate-button:disabled {
+  background: linear-gradient(45deg, #cccccc, #dddddd);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .generate-button {
+    padding: 12px 24px;
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .generate-button {
+    padding: 10px 20px;
+    font-size: 0.9rem;
+    min-width: 180px;
+    max-width: 240px;
+  }
+}
