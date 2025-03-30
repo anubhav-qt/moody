@@ -30,3 +30,5 @@ firebase-debug.log
 *.sln
 *.sw?
 .DS_Store
+
+data/

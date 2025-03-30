@@ -333,6 +333,238 @@ class FirebaseService {
       throw error;
     }
   }
+
+  /**
+   * Store playlist categories by country and language
+   * @param country ISO 3166-1 alpha-2 country code
+   * @param locale Language code (e.g., 'en_US', 'hi_IN')
+   * @param categories Categories data from Spotify API
+   */
+  async storePlaylistCategories(
+    country: string,
+    locale: string,
+    categories: any[]
+  ): Promise<void> {
+    try {
+      if (!country || !locale || !categories) {
+        console.error('Cannot store playlist categories: Missing required parameters');
+        return;
+      }
+
+      console.log(`Processing ${categories.length} categories for ${locale}...`);
+      
+      // Filter out categories for specific languages
+      const filteredCategories = categories.filter(category => {
+        const name = category.name.toLowerCase();
+        const isExcluded = name.includes('tamil') || 
+                           name.includes('telugu') ||
+                           name.includes('malayalam') || 
+                           name.includes('bhojpuri');
+        
+        if (isExcluded) {
+          console.log(`Filtering out category: ${category.name}`);
+        }
+        return !isExcluded;
+      });
+      
+      console.log(`Filtered out ${categories.length - filteredCategories.length} categories based on language criteria`);
+      
+      // Process categories to keep essential fields, excluding icons
+      const processedCategories = filteredCategories.map(category => ({
+        id: category.id,
+        name: category.name,
+        href: category.href
+        // Icons field removed intentionally
+      }));
+      
+      // Get reference to document for the country
+      const countryDocRef = db.collection('playlistCategories').doc(country);
+      
+      // Get existing data or create new
+      const doc = await countryDocRef.get();
+      
+      if (doc.exists) {
+        // Update existing document with new language data
+        const data = doc.data() || {};
+        const languages = data.languages || {};
+        
+        // Debug log what's in the database before update
+        console.log(`Existing languages in database for ${country}:`, Object.keys(languages));
+        
+        // Update the categories for this locale
+        languages[locale] = processedCategories;
+        
+        // Update the document with the new languages structure
+        await countryDocRef.update({
+          languages,
+          updatedAt: Timestamp.now()
+        });
+      } else {
+        // Create new document
+        console.log(`Creating new document for ${country} with locale ${locale}`);
+        await countryDocRef.set({
+          languages: {
+            [locale]: processedCategories
+          },
+          updatedAt: Timestamp.now(),
+          createdAt: Timestamp.now()
+        });
+      }
+      
+      console.log(`Stored ${processedCategories.length} playlist categories for country ${country}, locale ${locale}`);
+    } catch (error) {
+      console.error(`Error storing playlist categories for country ${country}, locale ${locale}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get playlist categories for a country and locale
+   * @param country ISO 3166-1 alpha-2 country code
+   * @param locale Optional language code. If not provided, returns all languages for the country
+   * @returns Playlist categories or null if not found
+   */
+  async getPlaylistCategories(
+    country: string,
+    locale?: string
+  ): Promise<any> {
+    try {
+      const docRef = await db.collection('playlistCategories').doc(country).get();
+      
+      if (!docRef.exists) {
+        return null;
+      }
+      
+      const data = docRef.data();
+      if (!data) return null;
+      
+      // If locale is specified, return only that language's categories
+      if (locale && data.languages && data.languages[locale]) {
+        return { 
+          country, 
+          locale, 
+          categories: data.languages[locale],
+          updatedAt: data.updatedAt
+        };
+      }
+      
+      // Otherwise return the full language structure
+      return {
+        country,
+        languages: data.languages,
+        updatedAt: data.updatedAt
+      };
+    } catch (error) {
+      console.error(`Error getting playlist categories for country ${country}, locale ${locale}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process track data to keep only necessary fields
+   * @param trackItems Track items from playlist tracks endpoint
+   * @returns Array of processed tracks
+   */
+  processSongData(trackItems: any[]): any[] {
+    if (!trackItems || trackItems.length === 0) return [];
+    
+    return trackItems
+      .filter(item => item.track) // Ensure track exists (some items might be null)
+      .map(item => {
+        const track = item.track;
+        
+        // Skip local tracks and tracks without IDs
+        if (track.is_local || !track.id) return null;
+        
+        return {
+          id: track.id,
+          name: track.name,
+          artists: track.artists.map((artist: any) => ({
+            id: artist.id,
+            name: artist.name
+          })),
+          album: {
+            id: track.album.id,
+            name: track.album.name,
+            release_date: track.album.release_date
+          },
+          duration_ms: track.duration_ms,
+          popularity: track.popularity,
+          explicit: track.explicit,
+          preview_url: track.preview_url || null
+        };
+      })
+      .filter(Boolean); // Remove null items
+  }
+
+  /**
+   * Process and store songs from playlists for a category
+   * @param categoryId Spotify category ID
+   * @param categoryName Category name for reference
+   * @param songs Array of processed song objects
+   */
+  async storeCategorySongs(
+    categoryId: string,
+    categoryName: string,
+    songs: any[]
+  ): Promise<void> {
+    try {
+      if (!categoryId || !songs || songs.length === 0) {
+        console.error('Cannot store songs: Missing required parameters or empty songs array');
+        return;
+      }
+      
+      // Process songs to remove duplicates based on track ID
+      const uniqueSongs = this.removeDuplicateSongs(songs);
+      console.log(`Storing ${uniqueSongs.length} unique songs for category ${categoryName} (${categoryId})`);
+      
+      // Store in Firestore
+      await db.collection('songsDataset').doc(categoryId).set({
+        categoryId,
+        categoryName,
+        songs: uniqueSongs,
+        count: uniqueSongs.length,
+        updatedAt: Timestamp.now()
+      }, { merge: true });
+      
+    } catch (error) {
+      console.error(`Error storing songs for category ${categoryId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Remove duplicate songs based on track ID
+   * @param songs Array of songs that may contain duplicates
+   * @returns Array of unique songs
+   */
+  private removeDuplicateSongs(songs: any[]): any[] {
+    const uniqueSongs = Array.from(
+      new Map(songs.map(song => [song.id, song])).values()
+    );
+    
+    return uniqueSongs;
+  }
+
+  /**
+   * Get songs for a specific category
+   * @param categoryId Spotify category ID
+   * @returns Songs for the category or null if not found
+   */
+  async getCategorySongs(categoryId: string): Promise<any> {
+    try {
+      const docRef = await db.collection('songsDataset').doc(categoryId).get();
+      
+      if (!docRef.exists) {
+        return null;
+      }
+      
+      return docRef.data();
+    } catch (error) {
+      console.error(`Error getting songs for category ${categoryId}:`, error);
+      throw error;
+    }
+  }
 }
 
 export default new FirebaseService();

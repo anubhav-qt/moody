@@ -291,100 +291,6 @@ class SpotifyService {
   }
 
   /**
-   * Get the current user's followed artists
-   * @param accessToken Valid access token
-   * @param limit Maximum number of items to return (default: 20, max: 50, use -1 for all artists)
-   * @param after The last artist ID retrieved from the previous request
-   * @returns Followed artists response
-   */
-  async getUserFollowedArtists(
-    accessToken: string, 
-    limit: number = 20, 
-    after?: string
-  ): Promise<any> {
-    try {
-      // Special case: fetch all followed artists (-1)
-      if (limit === -1) {
-        return await this.getAllUserFollowedArtists(accessToken);
-      }
-      
-      const params = new URLSearchParams();
-      
-      // Required parameter
-      params.append('type', 'artist');
-      
-      // Add optional parameters
-      if (limit) params.append('limit', limit.toString());
-      if (after) params.append('after', after);
-      
-      const response = await axios.get(`https://api.spotify.com/v1/me/following?${params.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      });
-      
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching user followed artists:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get all followed artists for a user by making multiple API calls as needed
-   * @param accessToken Valid access token
-   * @returns All followed artists consolidated into one response
-   */
-  private async getAllUserFollowedArtists(accessToken: string): Promise<any> {
-    try {
-      // Use maximum limit per request to minimize number of API calls
-      const maxLimit = 50;
-      let allArtists: any[] = [];
-      let after: string | undefined = undefined;
-      let hasMore = true;
-      
-      while (hasMore) {
-        const params = new URLSearchParams();
-        params.append('type', 'artist');
-        params.append('limit', maxLimit.toString());
-        if (after) params.append('after', after);
-        
-        const response = await axios.get(`https://api.spotify.com/v1/me/following?${params.toString()}`, {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        });
-        
-        const data = response.data.artists;
-        allArtists = [...allArtists, ...data.items];
-        
-        // Check if there's more data to fetch
-        if (data.next) {
-          // Extract the "after" parameter from the next URL
-          const nextUrl = new URL(data.next);
-          after = nextUrl.searchParams.get('after') || undefined;
-        } else {
-          hasMore = false;
-        }
-      }
-      
-      // Return a response object in the same format as the Spotify API but with all items
-      return {
-        artists: {
-          items: allArtists,
-          total: allArtists.length,
-          limit: allArtists.length,
-          href: `https://api.spotify.com/v1/me/following?type=artist&limit=${allArtists.length}`,
-          next: null,
-        }
-      };
-    } catch (error) {
-      console.error('Error fetching all user followed artists:', error);
-      throw error;
-    }
-  }
-
-  /**
    * Get the current user's top items (artists or tracks)
    * @param accessToken Valid access token
    * @param type Type of entity to return ('artists' or 'tracks')
@@ -446,7 +352,8 @@ class SpotifyService {
       let offset = 0;
       let allItems: any[] = [];
       let total = 0;
-      
+      let continueLoading = true;
+      // Make first request to get total count and first batch of items
       // Make first request to get total count and first batch of items
       const params = new URLSearchParams();
       params.append('limit', maxLimit.toString());
@@ -467,35 +374,56 @@ class SpotifyService {
       allItems = [...data.items];
       offset += maxLimit;
       
-      // Continue making requests until we have all items
-      while (offset < total) {
-        // Update params for next request
-        const nextParams = new URLSearchParams();
-        nextParams.append('limit', maxLimit.toString());
-        nextParams.append('offset', offset.toString());
-        nextParams.append('time_range', timeRange);
-        
-        const nextQueryString = nextParams.toString() ? `?${nextParams.toString()}` : '';
-        
-        const nextResponse = await axios.get(`https://api.spotify.com/v1/me/top/${type}${nextQueryString}`, {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
+      console.log(`Retrieved first ${allItems.length} of ${total} top ${type} for ${timeRange}`);
+      
+      // Spotify has a limit of how many items it can return (usually around 50-100 total items)
+      // Continue making requests until we have all items or hit Spotify's limit
+      while (offset < total && offset < 200 && continueLoading) { // Cap at offset 200 to avoid 500 errors
+        try {
+          // Update params for next request
+          const nextParams = new URLSearchParams();
+          nextParams.append('limit', maxLimit.toString());
+          nextParams.append('offset', offset.toString());
+          nextParams.append('time_range', timeRange);
+          
+          const nextQueryString = nextParams.toString() ? `?${nextParams.toString()}` : '';
+          
+          console.log(`Fetching top ${type} with offset ${offset} for ${timeRange}`);
+          
+          const nextResponse = await axios.get(`https://api.spotify.com/v1/me/top/${type}${nextQueryString}`, {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`
+            }
+          });
+          
+          // If we got an empty items array, stop fetching more
+          if (!nextResponse.data.items || nextResponse.data.items.length === 0) {
+            console.log(`No more ${type} returned at offset ${offset}, stopping pagination`);
+            continueLoading = false;
+            break;
           }
-        });
-        
-        // Add items to our collection
-        allItems = [...allItems, ...nextResponse.data.items];
-        offset += maxLimit;
+          
+          // Add items to our collection
+          allItems = [...allItems, ...nextResponse.data.items];
+          offset += maxLimit;
+          
+          console.log(`Retrieved ${allItems.length} of ${total} top ${type} for ${timeRange}`);
+        } catch (paginationError: any) {
+          // Handle pagination error - log it and break out of the loop
+          console.warn(`Error getting top ${type} at offset ${offset}: ${paginationError.message}`);
+          console.warn(`This may be due to Spotify's pagination limits. Using ${allItems.length} items already collected.`);
+          continueLoading = false;
+        }
       }
       
-      // Return a response object in the same format as the Spotify API but with all items
+      // Return a response object in the same format as the Spotify API but with all items successfully retrieved
       return {
         href: data.href,
         limit: allItems.length,
         next: null,
         offset: 0,
         previous: null,
-        total: total,
+        total: allItems.length, // Update total to match what we actually got
         items: allItems
       };
     } catch (error) {

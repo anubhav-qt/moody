@@ -1,6 +1,10 @@
 import { Router, Request, Response } from 'express';
+import axios from 'axios';
+import path from 'path';
+import fs from 'fs';
 import spotifyService from '../services/spotifyService';
 import firebaseService from '../services/firebaseService'; 
+import fileExportService from '../services/fileExportService';
 import 'express-session';
 
 declare module 'express-session' {
@@ -77,34 +81,30 @@ router.get('/callback', async (req: Request, res: Response) => {
       userId: spotifyUserId
     });
     
-    // NEW CODE: Fetch and store user's top tracks and artists
+    // Fetch and store only user's top tracks (removed artists) for medium and short term
     console.log('Fetching user data after authentication...');
     
     try {
-      // Define time ranges
+      // Define time ranges - only medium and short term
       const timeRanges = ['short_term', 'medium_term'] as const;
       
-      // Fetch and store top items for all time ranges
-      const fetchPromises: Promise<void>[] = [];
-      
+      // Fetch and store top tracks for time ranges
       for (const timeRange of timeRanges) {
-        // Get user's top artists
-        const topArtistsResponse = await spotifyService.getUserTopItems(
-          tokenResponse.access_token, 
-          'artists', 
-          timeRange, 
-          -1
-        );
-        await firebaseService.storeUserTopArtists(spotifyUserId, topArtistsResponse, timeRange);
-        
-        // Get user's top tracks
-        const topTracksResponse = await spotifyService.getUserTopItems(
-          tokenResponse.access_token, 
-          'tracks', 
-          timeRange, 
-          -1
-        );
-        await firebaseService.storeUserTopTracks(spotifyUserId, topTracksResponse, timeRange);
+        try {
+          // Get user's top tracks
+          const topTracksResponse = await spotifyService.getUserTopItems(
+            tokenResponse.access_token, 
+            'tracks', 
+            timeRange, 
+            -1
+          );
+          await firebaseService.storeUserTopTracks(spotifyUserId, topTracksResponse, timeRange);
+          
+          console.log(`Successfully stored top tracks for ${timeRange}`);
+        } catch (timeRangeError) {
+          console.error(`Error processing ${timeRange} data:`, timeRangeError);
+          // Continue with other time range even if one fails
+        }
       }
       
       console.log('Successfully stored user data after authentication!');
@@ -112,6 +112,7 @@ router.get('/callback', async (req: Request, res: Response) => {
       // If data fetching fails, just log it but continue the authentication
       console.error('Error storing user data during authentication:', dataError);
     }
+
     
     // Redirect to the frontend application
     res.redirect('http://localhost:3000');
@@ -208,7 +209,6 @@ router.get('/refresh-token', async (req: Request, res: Response) => {
     // Update session with new tokens
     req.session.accessToken = tokenResponse.access_token;
     const newExpiry = Date.now() + tokenResponse.expires_in * 1000;
-    req.session.tokenExpires = newExpiry;
     
     if (tokenResponse.refresh_token) {
       req.session.refreshToken = tokenResponse.refresh_token;
@@ -251,7 +251,7 @@ router.get('/me', async (req: Request, res: Response) => {
   }
 });
 
-// Add route to get and store user data (only top items)
+// Add route to get and store user data (only top tracks)
 router.get('/store-user-data', async (req: Request, res: Response) => {
   try {
     const accessToken = req.session.accessToken;
@@ -262,41 +262,33 @@ router.get('/store-user-data', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Not authenticated with Spotify' });
     }
     
-    // Define time ranges - removed long_term
+    // Define time ranges - medium and short term only
     const timeRanges = ['short_term', 'medium_term'] as const;
     
     // Store responses
     const responses: Record<string, any> = {};
     
-    // Fetch and store top items for time ranges
+    // Fetch and store top tracks only
     const topItemsPromises: Promise<void>[] = [];
     
     for (const timeRange of timeRanges) {
-      const artistPromise = spotifyService.getUserTopItems(accessToken, 'artists', timeRange, -1)
-        .then(async (topArtistsResponse) => {
-          responses[`artists_${timeRange}`] = topArtistsResponse;
-          await firebaseService.storeUserTopArtists(spotifyUserId, topArtistsResponse, timeRange);
-        });
-        
       const trackPromise = spotifyService.getUserTopItems(accessToken, 'tracks', timeRange, -1)
         .then(async (topTracksResponse) => {
           responses[`tracks_${timeRange}`] = topTracksResponse;
           await firebaseService.storeUserTopTracks(spotifyUserId, topTracksResponse, timeRange);
         });
         
-      topItemsPromises.push(artistPromise, trackPromise);
+      topItemsPromises.push(trackPromise);
     }
     
-    // Wait for all top items requests to complete
+    // Wait for all top tracks requests to complete
     await Promise.all(topItemsPromises);
     
     res.json({ 
       success: true, 
-      message: `Successfully stored top tracks and artists for short and medium term periods`,
+      message: `Successfully stored top tracks for short and medium term periods`,
       userId: spotifyUserId,
       counts: {
-        artists_short_term: responses.artists_short_term?.items.length || 0,
-        artists_medium_term: responses.artists_medium_term?.items.length || 0,
         tracks_short_term: responses.tracks_short_term?.items.length || 0,
         tracks_medium_term: responses.tracks_medium_term?.items.length || 0
       }
@@ -318,7 +310,7 @@ router.get('/store-user-data', async (req: Request, res: Response) => {
   }
 });
 
-// Add routes for top items
+// Add routes for top items (only tracks)
 router.get('/store-top-items', async (req: Request, res: Response) => {
   try {
     const accessToken = req.session.accessToken;
@@ -329,29 +321,23 @@ router.get('/store-top-items', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Not authenticated with Spotify' });
     }
 
-    // Define time ranges - removed long_term
+    // Define time ranges - medium and short term only
     const timeRanges = ['short_term', 'medium_term'] as const;
     
-    // Store responses for all time ranges
+    // Store responses for time ranges
     const responses: Record<string, any> = {};
     
-    // Fetch and store data for all time ranges
+    // Fetch and store tracks only
     const promises: Promise<void>[] = [];
     
     for (const timeRange of timeRanges) {
-      const artistPromise = spotifyService.getUserTopItems(accessToken, 'artists', timeRange, -1)
-        .then(async (topArtistsResponse) => {
-          responses[`artists_${timeRange}`] = topArtistsResponse;
-          await firebaseService.storeUserTopArtists(spotifyUserId, topArtistsResponse, timeRange);
-        });
-        
       const trackPromise = spotifyService.getUserTopItems(accessToken, 'tracks', timeRange, -1)
         .then(async (topTracksResponse) => {
           responses[`tracks_${timeRange}`] = topTracksResponse;
           await firebaseService.storeUserTopTracks(spotifyUserId, topTracksResponse, timeRange);
         });
         
-      promises.push(artistPromise, trackPromise);
+      promises.push(trackPromise);
     }
     
     // Wait for all requests to complete
@@ -359,11 +345,9 @@ router.get('/store-top-items', async (req: Request, res: Response) => {
     
     res.json({ 
       success: true, 
-      message: `Successfully stored top artists and tracks for short and medium term periods`,
+      message: `Successfully stored top tracks for short and medium term periods`,
       userId: spotifyUserId,
       counts: {
-        artists_short_term: responses.artists_short_term?.items.length || 0,
-        artists_medium_term: responses.artists_medium_term?.items.length || 0,
         tracks_short_term: responses.tracks_short_term?.items.length || 0,
         tracks_medium_term: responses.tracks_medium_term?.items.length || 0
       }
@@ -381,41 +365,6 @@ router.get('/store-top-items', async (req: Request, res: Response) => {
     res.status(500).json({ 
       error: 'Failed to store user top items',
       message: error.message || 'Unknown error'
-    });
-  }
-});
-
-// Get stored top artists
-router.get('/stored-top-artists', async (req: Request, res: Response) => {
-  try {
-    const spotifyUserId = req.session.spotifyUserId;
-    
-    // Check if user is authenticated
-    if (!spotifyUserId) {
-      return res.status(401).json({ error: 'Not authenticated with Spotify' });
-    }
-    
-    // Get time range from query param, default to medium_term
-    const timeRange = (req.query.time_range as 'medium_term' | 'short_term') || 'medium_term';
-    
-    // Get stored top artists from Firestore
-    const topArtists = await firebaseService.getUserTopArtists(spotifyUserId, timeRange);
-    
-    if (!topArtists) {
-      return res.status(404).json({ error: `No top artists (${timeRange}) found for user` });
-    }
-    
-    res.json({
-      userId: spotifyUserId,
-      timeRange: timeRange,
-      artists: topArtists,
-      count: topArtists.length
-    });
-  } catch (error) {
-    console.error('Error fetching stored user top artists:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch stored user top artists',
-      message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
@@ -455,4 +404,5 @@ router.get('/stored-top-tracks', async (req: Request, res: Response) => {
   }
 });
 
+// Add the default export
 export default router;

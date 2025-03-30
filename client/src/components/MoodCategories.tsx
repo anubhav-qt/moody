@@ -18,9 +18,10 @@ const MoodCategories: React.FC<MoodCategoriesProps> = ({ onMoodSelect, selectedM
     { id: 'energetic', label: 'Energetic', emoji: '⚡' },
     { id: 'relaxed', label: 'Relaxed', emoji: '😌' },
     { id: 'romantic', label: 'Romantic', emoji: '❤️' },
-    { id: 'melancholy', label: 'Melancholy', emoji: '🥺' },
+    { id: 'sad', label: 'Sad', emoji: '🥺' },
     { id: 'focused', label: 'Focused', emoji: '🧠' },
-    { id: 'party', label: 'Party', emoji: '🎉' }
+    { id: 'party', label: 'Party', emoji: '🎉' }, 
+    { id: 'angry', label: 'Angry', emoji: '😡' }
   ];
 
   return (
