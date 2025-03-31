@@ -23,6 +23,28 @@ interface SpotifyUserProfile {
   // other profile fields...
 }
 
+interface SpotifyPlaylistResponse {
+  id: string;
+  name: string;
+  description?: string;
+  external_urls?: {
+    spotify?: string;
+  };
+  owner?: {
+    id: string;
+    display_name?: string;
+  };
+  images?: Array<{
+    url: string;
+    width?: number;
+    height?: number;
+  }>;
+}
+
+interface SpotifyTrackAddResponse {
+  snapshot_id: string;
+}
+
 class SpotifyService {
   private clientId: string;
   private clientSecret: string;
@@ -88,7 +110,9 @@ class SpotifyService {
       'user-follow-read',
       'user-top-read',
       'user-read-recently-played',
-      'user-library-read'
+      'user-library-read',
+      'playlist-modify-public',  // Add scope for modifying public playlists
+      'playlist-modify-private'  // Add scope for modifying private playlists
     ].join(' ');
 
     const params = new URLSearchParams({
@@ -428,6 +452,113 @@ class SpotifyService {
       };
     } catch (error) {
       console.error(`Error fetching all user top ${type}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a new playlist for a Spotify user
+   * @param accessToken Valid access token with playlist-modify-public and/or playlist-modify-private scopes
+   * @param userId The Spotify user ID
+   * @param name The name for the new playlist
+   * @param description Optional description for the playlist
+   * @param isPublic Whether the playlist should be public (default: true)
+   * @returns The created playlist object
+   */
+  async createPlaylist(
+    accessToken: string,
+    userId: string,
+    name: string,
+    description: string = '',
+    isPublic: boolean = true
+  ): Promise<SpotifyPlaylistResponse> {
+    try {
+      const response = await axios.post(
+        `https://api.spotify.com/v1/users/${userId}/playlists`,
+        {
+          name,
+          description,
+          public: isPublic,
+          collaborative: false // Always false for new playlists via API
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error creating Spotify playlist:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Add tracks to an existing Spotify playlist
+   * @param accessToken Valid access token with playlist-modify-public and/or playlist-modify-private scopes
+   * @param playlistId The Spotify ID of the playlist
+   * @param trackUris Array of Spotify track URIs to add (format: spotify:track:ID)
+   * @param position Optional position to insert the tracks (default: append to end)
+   * @returns Response with snapshot_id
+   */
+  async addTracksToPlaylist(
+    accessToken: string,
+    playlistId: string,
+    trackUris: string[],
+    position?: number
+  ): Promise<SpotifyTrackAddResponse> {
+    try {
+      const requestBody: any = { uris: trackUris };
+      
+      // Add position if specified
+      if (position !== undefined) {
+        requestBody.position = position;
+      }
+      
+      const response = await axios.post(
+        `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
+        requestBody,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error adding tracks to Spotify playlist:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get details of a playlist
+   * @param accessToken Valid access token
+   * @param playlistId The Spotify ID of the playlist
+   * @returns Playlist details including images
+   */
+  async getPlaylist(
+    accessToken: string,
+    playlistId: string
+  ): Promise<SpotifyPlaylistResponse> {
+    try {
+      const response = await axios.get(
+        `https://api.spotify.com/v1/playlists/${playlistId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        }
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error getting Spotify playlist details:', error);
       throw error;
     }
   }
