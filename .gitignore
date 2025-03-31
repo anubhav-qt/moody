@@ -32,3 +32,6 @@ firebase-debug.log
 .DS_Store
 
 data/
+
+Moody/*.csv
+Moody/*.parquet

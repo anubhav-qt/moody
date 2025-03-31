@@ -1,11 +1,9 @@
 import { Router, Request, Response } from 'express';
 import axios from 'axios';
-import path from 'path';
-import fs from 'fs';
 import spotifyService from '../services/spotifyService';
 import firebaseService from '../services/firebaseService'; 
-import fileExportService from '../services/fileExportService';
 import 'express-session';
+import { getMoodFilterRanges } from '../utils/moodToFeatures';
 
 declare module 'express-session' {
   interface SessionData {
@@ -400,6 +398,109 @@ router.get('/stored-top-tracks', async (req: Request, res: Response) => {
     res.status(500).json({ 
       error: 'Failed to fetch stored user top tracks',
       message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// New endpoint to generate playlist recommendations using Flask microservice
+router.post('/generate-playlist', async (req: Request, res: Response) => {
+  try {
+    const accessToken = req.session.accessToken;
+    const spotifyUserId = req.session.spotifyUserId;
+    
+    // Check if user is authenticated
+    if (!accessToken || !spotifyUserId) {
+      return res.status(401).json({ error: 'Not authenticated with Spotify' });
+    }
+
+    const { moods } = req.body;
+    
+    if (!moods || !Array.isArray(moods) || moods.length === 0) {
+      return res.status(400).json({ error: 'Please select at least one mood' });
+    }
+    
+    // Get user's top tracks for both medium and short term
+    const [mediumTermTracks, shortTermTracks] = await Promise.all([
+      firebaseService.getUserTopTracks(spotifyUserId, 'medium_term'),
+      firebaseService.getUserTopTracks(spotifyUserId, 'short_term')
+    ]);
+    
+    // Combine tracks from both time ranges, avoiding duplicates
+    const trackIdMap = new Map();
+    
+    // Add medium term tracks first (lower priority)
+    if (mediumTermTracks && mediumTermTracks.length > 0) {
+      mediumTermTracks.forEach(track => {
+        if (track.id) {
+          trackIdMap.set(track.id, track);
+        }
+      });
+    }
+    
+    // Add short term tracks second (higher priority - will overwrite duplicates)
+    if (shortTermTracks && shortTermTracks.length > 0) {
+      shortTermTracks.forEach(track => {
+        if (track.id) {
+          trackIdMap.set(track.id, track);
+        }
+      });
+    }
+    
+    // Convert map back to array of unique tracks
+    const combinedTracks = Array.from(trackIdMap.values());
+    
+    if (combinedTracks.length === 0) {
+      return res.status(404).json({ 
+        error: 'No tracks found for this user', 
+        message: 'Please play more music on Spotify to get personalized recommendations' 
+      });
+    }
+    
+    // Extract track IDs from the combined tracks
+    const trackIds = combinedTracks.map(track => track.id);
+    
+    // Get mood filters using the function from utils
+    const moodFilters = getMoodFilterRanges(moods);
+    
+    console.log(`Sending request to Flask microservice with ${trackIds.length} tracks (${mediumTermTracks?.length || 0} medium-term, ${shortTermTracks?.length || 0} short-term) and mood filters:`, moodFilters);
+    
+    // Call Flask microservice with correct URL
+    const flaskResponse = await axios.post('http://localhost:5173/recommend', {
+      track_ids: trackIds,
+      mood_filters: moodFilters
+    });
+    
+    // Get set_1 from the response (content-based filtered tracks)
+    const set_1 = flaskResponse.data.set_1;
+    
+    if (!set_1 || !Array.isArray(set_1)) {
+      return res.status(500).json({ 
+        error: 'Invalid response from recommendation service',
+        response: flaskResponse.data
+      });
+    }
+    
+    console.log(`Received ${set_1.length} track recommendations from Flask microservice`);
+    
+    // Return the recommendations to the client
+    res.json({ 
+      success: true,
+      recommendations: set_1,
+      count: set_1.length,
+      moods,
+      filters: moodFilters,
+      trackCounts: {
+        medium_term: mediumTermTracks?.length || 0,
+        short_term: shortTermTracks?.length || 0,
+        combined: combinedTracks.length
+      }
+    });
+    
+  } catch (error: any) {
+    console.error('Error generating playlist recommendations:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate playlist recommendations', 
+      message: error.message || 'Unknown error'
     });
   }
 });
