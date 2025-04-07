@@ -85,6 +85,7 @@ router.get('/callback', async (req: Request, res: Response) => {
     try {
       // Define time ranges - only medium and short term
       const timeRanges = ['short_term', 'medium_term'] as const;
+      let hasTopTracks = false;
       
       // Fetch and store top tracks for time ranges
       for (const timeRange of timeRanges) {
@@ -96,12 +97,37 @@ router.get('/callback', async (req: Request, res: Response) => {
             timeRange, 
             -1
           );
-          await firebaseService.storeUserTopTracks(spotifyUserId, topTracksResponse, timeRange);
           
-          console.log(`Successfully stored top tracks for ${timeRange}`);
+          if (topTracksResponse.items && topTracksResponse.items.length > 0) {
+            await firebaseService.storeUserTopTracks(spotifyUserId, topTracksResponse, timeRange);
+            console.log(`Successfully stored ${topTracksResponse.items.length} top tracks for ${timeRange}`);
+            hasTopTracks = true;
+          } else {
+            console.log(`No top tracks found for ${timeRange}`);
+          }
         } catch (timeRangeError) {
           console.error(`Error processing ${timeRange} data:`, timeRangeError);
           // Continue with other time range even if one fails
+        }
+      }
+      
+      // If no top tracks were found, try to store saved tracks as a fallback
+      if (!hasTopTracks) {
+        console.log('No top tracks found for any time range, trying saved tracks as fallback...');
+        try {
+          const savedTracksResponse = await spotifyService.getUserSavedTracks(
+            tokenResponse.access_token, 
+            -1
+          );
+          
+          if (savedTracksResponse.items && savedTracksResponse.items.length > 0) {
+            await firebaseService.storeUserSavedTracks(spotifyUserId, savedTracksResponse);
+            console.log(`Successfully stored ${savedTracksResponse.items.length} saved tracks as fallback`);
+          } else {
+            console.log('No saved tracks found either');
+          }
+        } catch (savedTracksError) {
+          console.error('Error fetching saved tracks:', savedTracksError);
         }
       }
       
@@ -447,12 +473,47 @@ router.post('/generate-playlist', async (req: Request, res: Response) => {
     }
     
     // Convert map back to array of unique tracks
-    const combinedTracks = Array.from(trackIdMap.values());
+    let combinedTracks = Array.from(trackIdMap.values());
     
+    // If we have no top tracks, try to get saved tracks as a fallback
+    if (combinedTracks.length === 0) {
+      console.log('No top tracks found, trying to use saved tracks as a fallback...');
+      
+      // First check if we already have saved tracks stored in Firestore
+      let savedTracks = await firebaseService.getUserSavedTracks(spotifyUserId);
+      
+      // If no saved tracks are stored, fetch them from Spotify API and store them
+      if (!savedTracks || savedTracks.length === 0) {
+        try {
+          console.log('No saved tracks in Firestore, fetching from Spotify API...');
+          const savedTracksResponse = await spotifyService.getUserSavedTracks(accessToken, -1);
+          
+          if (savedTracksResponse.items && savedTracksResponse.items.length > 0) {
+            // Store the saved tracks for future use
+            await firebaseService.storeUserSavedTracks(spotifyUserId, savedTracksResponse);
+            
+            // Get the stored tracks
+            savedTracks = await firebaseService.getUserSavedTracks(spotifyUserId);
+            console.log(`Successfully fetched and stored ${savedTracksResponse.items.length} saved tracks`);
+          }
+        } catch (savedTracksError) {
+          console.error('Error fetching saved tracks:', savedTracksError);
+          // Continue with any tracks we might have
+        }
+      }
+      
+      // Add saved tracks to our combined tracks
+      if (savedTracks && savedTracks.length > 0) {
+        console.log(`Using ${savedTracks.length} saved tracks for recommendations`);
+        combinedTracks = savedTracks;
+      }
+    }
+    
+    // If we still have no tracks, return an error
     if (combinedTracks.length === 0) {
       return res.status(404).json({ 
         error: 'No tracks found for this user', 
-        message: 'Please play more music on Spotify to get personalized recommendations' 
+        message: 'Please play more music on Spotify or save some tracks to your library to get personalized recommendations' 
       });
     }
     
@@ -462,7 +523,12 @@ router.post('/generate-playlist', async (req: Request, res: Response) => {
     // Get mood filters using the function from utils
     const moodFilters = getMoodFilterRanges(moods);
     
-    console.log(`Sending request to Flask microservice with ${trackIds.length} tracks (${mediumTermTracks?.length || 0} medium-term, ${shortTermTracks?.length || 0} short-term) and mood filters:`, moodFilters);
+    // Track the source of tracks used for recommendations
+    const trackSource = mediumTermTracks && shortTermTracks && 
+                        combinedTracks.length > 0 && 
+                        (mediumTermTracks.length > 0 || shortTermTracks.length > 0) ? 'top' : 'saved';
+    
+    console.log(`Sending request to Flask microservice with ${trackIds.length} ${trackSource} tracks and mood filters:`, moodFilters);
     
     // Call Flask microservice with correct URL
     const flaskResponse = await axios.post('http://localhost:5173/recommend', {
@@ -482,24 +548,24 @@ router.post('/generate-playlist', async (req: Request, res: Response) => {
     
     console.log(`Received ${set_1.length} track recommendations from Flask microservice`);
 
-    // Always create a playlist with the recommended tracks
+    // Always create a playlist with the recommended tracks, even if there are 0 tracks
     let playlistData = null;
     
-    if (set_1.length > 0) {
-      try {
-        // Default playlist name if not provided
-        const finalPlaylistName = playlistName || `Moody: ${moods.join(', ')} Playlist`;
-        
-        // Create a new playlist
-        const playlist = await spotifyService.createPlaylist(
-          accessToken,
-          spotifyUserId,
-          finalPlaylistName,
-          `Generated by Moody based on your listening habits and the following moods: ${moods.join(', ')}`
-        );
-        
-        if (playlist && playlist.id) {
-          // Add tracks to the playlist
+    try {
+      // Default playlist name if not provided
+      const finalPlaylistName = playlistName || `Moody: ${moods.join(', ')} Playlist`;
+      
+      // Create a new playlist
+      const playlist = await spotifyService.createPlaylist(
+        accessToken,
+        spotifyUserId,
+        finalPlaylistName,
+        `Generated by Moody based on your listening habits and the following moods: ${moods.join(', ')}`
+      );
+      
+      if (playlist && playlist.id) {
+        // Add tracks to the playlist if there are any
+        if (set_1.length > 0) {
           // Convert track IDs to Spotify URIs (spotify:track:ID format)
           const trackUris = set_1.map(trackId => `spotify:track:${trackId}`);
           
@@ -513,45 +579,43 @@ router.post('/generate-playlist', async (req: Request, res: Response) => {
               chunk
             );
           }
-          
-          // Get playlist image if available
-          let image_url = undefined;
-          try {
-            const playlistDetails = await spotifyService.getPlaylist(accessToken, playlist.id);
-            if (playlistDetails.images && playlistDetails.images.length > 0) {
-              image_url = playlistDetails.images[0].url;
-            }
-          } catch (imageError) {
-            console.error('Error fetching playlist image:', imageError);
-            // Continue without the image
-          }
-          
-          playlistData = {
-            id: playlist.id,
-            name: playlist.name,
-            description: playlist.description,
-            external_url: playlist.external_urls?.spotify || `https://open.spotify.com/playlist/${playlist.id}`,
-            spotify_uri: `spotify:playlist:${playlist.id}`,
-            tracks_added: set_1.length,
-            image_url
-          };
-          
-          // Save playlist to user's collection in Firestore
-          try {
-            await firebaseService.saveUserPlaylist(spotifyUserId, playlistData, moods);
-          } catch (saveError) {
-            console.error('Error saving playlist to Firestore:', saveError);
-            // Continue even if saving to Firestore fails
-          }
-          
-          console.log(`Successfully created playlist "${playlist.name}" with ${set_1.length} tracks`);
         }
-      } catch (playlistError: any) {
-        console.error('Error creating/updating playlist:', playlistError);
-        // If playlist creation fails, we'll still return the recommendations
+        
+        // Get playlist image if available
+        let image_url = undefined;
+        try {
+          const playlistDetails = await spotifyService.getPlaylist(accessToken, playlist.id);
+          if (playlistDetails.images && playlistDetails.images.length > 0) {
+            image_url = playlistDetails.images[0].url;
+          }
+        } catch (imageError) {
+          console.error('Error fetching playlist image:', imageError);
+          // Continue without the image
+        }
+        
+        playlistData = {
+          id: playlist.id,
+          name: playlist.name,
+          description: playlist.description,
+          external_url: playlist.external_urls?.spotify || `https://open.spotify.com/playlist/${playlist.id}`,
+          spotify_uri: `spotify:playlist:${playlist.id}`,
+          tracks_added: set_1.length,
+          image_url
+        };
+        
+        // Save playlist to user's collection in Firestore, even with 0 tracks
+        try {
+          await firebaseService.saveUserPlaylist(spotifyUserId, playlistData, moods);
+        } catch (saveError) {
+          console.error('Error saving playlist to Firestore:', saveError);
+          // Continue even if saving to Firestore fails
+        }
+        
+        console.log(`Successfully created playlist "${playlist.name}" with ${set_1.length} tracks`);
       }
-    } else {
-      console.log("No recommendations returned from Flask microservice, skipping playlist creation");
+    } catch (playlistError: any) {
+      console.error('Error creating/updating playlist:', playlistError);
+      // If playlist creation fails, we'll still return the recommendations
     }
     
     // Return the recommendations to the client with playlist info
@@ -564,8 +628,10 @@ router.post('/generate-playlist', async (req: Request, res: Response) => {
       trackCounts: {
         medium_term: mediumTermTracks?.length || 0,
         short_term: shortTermTracks?.length || 0,
+        saved: trackSource === 'saved' ? combinedTracks.length : 0,
         combined: combinedTracks.length
       },
+      track_source: trackSource,
       playlist: playlistData
     });
     

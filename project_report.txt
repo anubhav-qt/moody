@@ -1,0 +1,199 @@
+# Moody Project Report
+
+## Overview
+Moody is a personalized music recommendation platform that integrates with Spotify to generate mood-based playlists. It leverages user listening habits, mood-specific filters, and advanced machine learning models to curate playlists tailored to individual preferences.
+
+---
+
+## Tech Stack
+### Frontend
+- **React**: For building the user interface.
+- **TypeScript**: Ensures type safety and better developer experience.
+- **CSS**: For styling the application with dynamic mood-based themes.
+
+### Backend
+- **Node.js**: For handling API requests and server-side logic.
+- **Express.js**: Lightweight framework for building RESTful APIs.
+- **Firebase Firestore**: For storing user data, playlists, and tokens.
+- **Flask**: Python-based microservice for content-based music recommendations.
+
+### Machine Learning
+- **Scikit-learn**: For clustering and similarity computations.
+- **TheFuzz**: For fuzzy string matching during deduplication.
+- **Pandas & NumPy**: For data manipulation and numerical computations.
+
+---
+
+## Workflow
+1. **User Authentication**:
+   - Users log in via Spotify OAuth using PKCE flow.
+   - Access tokens and refresh tokens are securely stored in Firebase Firestore.
+
+2. **Data Collection**:
+   - Fetch user’s top tracks (short-term and medium-term) and saved tracks from Spotify.
+   - Store processed data in Firestore for efficient retrieval.
+
+3. **Mood Selection**:
+   - Users select one or more moods from predefined categories (e.g., Happy, Relaxed, Party).
+   - Dynamic UI updates based on selected moods.
+
+4. **Recommendation Generation**:
+   - User-selected moods are mapped to audio feature ranges (e.g., danceability, energy).
+   - Flask microservice generates recommendations using:
+     - User track embeddings.
+     - Mood-specific filters.
+     - Deduplication logic to ensure diverse results.
+
+5. **Playlist Creation**:
+   - Recommended tracks are added to a new Spotify playlist.
+   - Playlists are saved in Firestore for future access.
+
+---
+
+## Models Used
+### Clustering
+- **KMeans**:
+  - Clusters user track embeddings to identify diverse listening preferences.
+  - Centroids represent user’s musical taste profiles.
+
+### Similarity Search
+- **Nearest Neighbors**:
+  - Finds tracks similar to user cluster centroids using cosine similarity.
+  - Efficiently handles large datasets with optimized algorithms.
+
+### Deduplication
+- **Fuzzy Matching**:
+  - Ensures no duplicate tracks by comparing normalized track names and artist combinations.
+  - Uses a similarity threshold to filter out near-duplicates.
+
+---
+
+## Methodology
+### Mood Mapping
+- Each mood is associated with specific ranges for Spotify audio features:
+  - **Danceability**: Measures how suitable a track is for dancing.
+  - **Energy**: Represents intensity and activity.
+  - **Acousticness**: Indicates the likelihood of a track being acoustic.
+  - **Valence**: Describes the musical positivity conveyed.
+
+### Recommendation Pipeline
+1. **Input Tracks**:
+   - User’s top tracks and saved tracks are used as input.
+2. **Embedding Extraction**:
+   - Preprocessed track embeddings are used for similarity computations.
+3. **Filtering**:
+   - Tracks are filtered based on mood-specific audio feature ranges.
+4. **Deduplication**:
+   - Tracks are deduplicated using artist and track name similarity.
+
+---
+
+## Training Process and Embedding Creation
+### Data Preprocessing
+1. **Dataset Preparation**:
+   - The dataset consists of tracks with audio features (e.g., danceability, energy, valence) and metadata (e.g., track name, artist, genre).
+   - Tracks are filtered to retain only relevant columns such as `track_id`, `artists`, `track_name`, and audio features.
+
+2. **Normalization**:
+   - Audio features are normalized using `StandardScaler` to ensure uniform scaling across features.
+   - Genres are one-hot encoded using `LabelBinarizer` to represent categorical data numerically.
+
+3. **Feature Matrix**:
+   - A combined feature matrix is created by concatenating normalized audio features and encoded genres.
+
+### Model Architecture
+1. **Autoencoder**:
+   - A neural network is used to learn compact embeddings for tracks.
+   - The model consists of:
+     - Input layer for the feature matrix.
+     - Dense layers for encoding the input into a lower-dimensional embedding space.
+     - A reconstruction head to decode the embeddings back to the original feature space.
+
+2. **Embedding Layer**:
+   - The embedding layer outputs a 64-dimensional vector for each track, capturing its unique characteristics.
+
+### Training
+1. **Train-Validation Split**:
+   - The dataset is split into training (80%) and validation (20%) sets.
+
+2. **Loss Function**:
+   - Mean Squared Error (MSE) is used as the loss function to minimize reconstruction error.
+
+3. **Optimization**:
+   - The model is trained using the Adam optimizer for 50 epochs with a batch size of 256.
+
+4. **Evaluation**:
+   - The model's performance is monitored using validation loss and Mean Absolute Error (MAE).
+
+### Embedding Extraction
+1. **Embedding Model**:
+   - After training, the embedding layer is extracted as a standalone model.
+   - This model generates embeddings for all tracks in the dataset.
+
+2. **Storage**:
+   - The embeddings are stored in a `.parquet` file along with track metadata to create a local vector database.
+   - This database enables superfast similarity search using cosine similarity or nearest neighbor algorithms.
+
+---
+
+## Features
+### User Authentication
+- Secure Spotify login using OAuth with PKCE.
+- Automatic token refresh for seamless user experience.
+
+### Mood-Based Playlists
+- Predefined moods with customizable filters.
+- Dynamic playlist generation based on user preferences.
+
+### Saved Playlists
+- View and manage previously generated playlists.
+- Delete playlists from Firestore without affecting Spotify.
+
+### Dynamic UI
+- Mood-specific themes with gradients, text colors, and button styles.
+- Smooth transitions for a visually appealing experience.
+
+---
+
+## Flask Microservice
+### Purpose
+- Handles content-based filtering and recommendation generation.
+
+### Key Components
+1. **Track Embeddings**:
+   - Precomputed embeddings stored in the `.parquet` file are loaded into memory for efficient similarity search.
+   - The embeddings serve as the foundation for clustering and filtering.
+
+2. **Similarity Search**:
+   - Nearest Neighbor search is performed on the embedding space to find tracks similar to user preferences.
+
+3. **Mood Filtering**:
+   - Tracks are filtered based on mood-specific audio feature ranges.
+
+4. **Deduplication**:
+   - Tracks are deduplicated using fuzzy matching to ensure diversity in recommendations.
+
+---
+
+## Challenges and Solutions
+1. **Token Expiry**:
+   - Implemented automatic token refresh using Spotify’s refresh token API.
+2. **Large Dataset Handling**:
+   - Optimized similarity search with Nearest Neighbors and cosine similarity.
+3. **Duplicate Tracks**:
+   - Used fuzzy matching to eliminate near-duplicates.
+
+---
+
+## Future Enhancements
+1. **Collaborative Filtering**:
+   - Incorporate user-to-user similarity for better recommendations.
+   - Leverage a dataset of 1 million Spotify playlists, where each playlist is treated as a user and the playlist songs as the user's liked songs.
+
+2. **Multi-Mood Blending**:
+   - Improve blending logic for more diverse multi-mood playlists.
+
+---
+
+## Conclusion
+Moody is a robust and scalable platform for personalized music recommendations. By combining Spotify’s rich dataset with advanced machine learning techniques, including embedding-based similarity search, it delivers a unique and engaging user experience.

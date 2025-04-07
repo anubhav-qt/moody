@@ -174,6 +174,78 @@ class FirebaseService {
   }
 
   /**
+   * Process and store user's saved tracks
+   * @param userId Spotify user ID
+   * @param savedTracksData Original saved tracks data from Spotify API
+   */
+  async storeUserSavedTracks(
+    userId: string,
+    savedTracksData: any
+  ): Promise<void> {
+    try {
+      if (!userId) {
+        console.error('Cannot store user saved tracks: User ID is empty');
+        return;
+      }
+
+      // Process the tracks to remove unwanted fields
+      // Saved tracks data has tracks wrapped in a "track" object with added_at field
+      const processedTracks = savedTracksData.items.map((item: any) => this.processIndividualTrack(item.track));
+      
+      // Get existing user data or create new
+      const userDocRef = db.collection('userData').doc(userId);
+      const doc = await userDocRef.get();
+      
+      const fieldName = 'savedTracks';
+      const updateTimestampField = `${fieldName}_lastUpdated`;
+      
+      if (doc.exists) {
+        // Update existing document
+        const updateData: Record<string, any> = {};
+        updateData[fieldName] = processedTracks;
+        updateData[updateTimestampField] = Timestamp.now();
+        
+        await userDocRef.update(updateData);
+      } else {
+        // Create new document
+        const initialData: Record<string, any> = {};
+        initialData[fieldName] = processedTracks;
+        initialData[updateTimestampField] = Timestamp.now();
+        
+        await userDocRef.set(initialData);
+      }
+      
+      console.log(`Stored ${processedTracks.length} saved tracks for user ${userId}`);
+    } catch (error) {
+      console.error(`Error storing saved tracks in Firestore for user ${userId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get user's saved tracks from Firestore
+   * @param userId Spotify user ID
+   * @returns User saved tracks data or null if not found
+   */
+  async getUserSavedTracks(
+    userId: string
+  ): Promise<Track[] | null> {
+    try {
+      const docRef = await db.collection('userData').doc(userId).get();
+      
+      if (!docRef.exists) {
+        return null;
+      }
+      
+      const data = docRef.data();
+      return data?.savedTracks as Track[] || null;
+    } catch (error) {
+      console.error('Error getting user saved tracks from Firestore:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Process a single track data object (for top tracks)
    * This is needed because top tracks are not wrapped in a "track" object like saved tracks
    * @param track Track item from Spotify API
